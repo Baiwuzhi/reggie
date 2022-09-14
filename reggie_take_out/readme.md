@@ -1,6 +1,6 @@
 技术栈-
 
-`springboot`+`mybatisplus`+`git`+`linux`
+`springboot`+`mybatisplus`+`Restful`
 
 
 
@@ -488,27 +488,1420 @@ mybatis-plus:
 
 ## 前端内容导入
 
-
+见资料或[github](https://github.com/Baiwuzhi/remoteIDEProjects/tree/master/reggie_take_out/src/main/resources)
 
 ****
 
 # 后台系统登录
 
+## 基础开发与配置
+
+1. 创建entity包下的实体类 `employee`
+
+   ```java
+   package com.reggie.entity;
+   
+   import com.baomidou.mybatisplus.annotation.FieldFill;
+   import com.baomidou.mybatisplus.annotation.TableField;
+   import lombok.Data;
+   import java.io.Serializable;
+   import java.time.LocalDateTime;
+   
+   @Data
+   public class Employee implements Serializable {
+   
+       private static final long serialVersionUID = 1L;
+   
+       private Long id;
+   
+       private String username;
+   
+       private String name;
+   
+       private String password;
+   
+       private String phone;
+   
+       private String sex;
+   
+       private String idNumber;
+   
+       private Integer status;
+   
+       private LocalDateTime createTime;
+   
+       private LocalDateTime updateTime;
+   
+       @TableField(fill = FieldFill.INSERT)
+       private Long createUser;
+   
+       @TableField(fill = FieldFill.INSERT_UPDATE)
+       private Long updateUser;
+   
+   }
+   ```
+
+2. 创建各种包, `config`, `controller`, `mapper`, `service`和service下的`impl`
+
+   > config下设置`静态资源映射`
+
+   ```java
+   package com.reggie.config;
+   
+   @Slf4j
+   @Configuration
+   public class WebMvcConfig extends WebMvcConfigurationSupport {
+       /**
+        * 静态资源映射
+        * @param registry
+        */
+       @Override
+       protected void addResourceHandlers(ResourceHandlerRegistry registry) {
+           log.info("开始进行静态资源映射");
+           registry.addResourceHandler("/backend/**").
+                   addResourceLocations("classpath:/backend/");
+           registry.addResourceHandler("/front/**").
+                   addResourceLocations("classpath:/front/");
+       }
+   }
+   ```
+
+3. 创建`mapper`接口, `service`接口和`实现类`, 创建`controller`
+
+   ```java
+   @Mapper
+   public interface EmployeeMapper extends BaseMapper<Employee> {
+   }
+   ```
+
+   ```java
+   public interface EmployeeService extends IService<Employee> {
+   }
+   ```
+
+   ```java
+   @Service
+   public class EmployeeServiceImpl extends ServiceImpl<EmployeeMapper, Employee> implements EmployeeService {
+   }
+   ```
+
+   ```java
+   @Slf4j
+   @RestController
+   @RequestMapping("/employee")
+   public class EmployeeController {
+   }
+   ```
+
+   后面的所有mapper,service和impl继承和实现都与此相同:
+
+   * mapper继承的是**BaseMapper**, 泛型是**实体类**.
+   * service继承的是**IService**, 泛型也是**实体类**.
+   * 实现类继承的是**ServiceImpl**, 泛型有两个参数, 分别是**mapper接口, 和实体类**. 然后实现service.
+
+4. 导入返回结果类到common包, 新建一个common包
+
+   **此类是一个通用结果类，服务端响应的所有结果最终都会包装成此种类型返回给前端页面**
+
+   ```java
+   package com.reggie.common;
+   
+   import lombok.Data;
+   import java.util.HashMap;
+   import java.util.Map;
+   
+   /**
+    * 通用返回结果
+    * @param <T>
+    */
+   @Data
+   public class R<T> {
+   
+       private Integer code; //编码：1成功，0和其它数字为失败
+   
+       private String msg; //错误信息
+   
+       private T data; //数据
+   
+       private Map map = new HashMap(); //动态数据
+   
+       public static <T> R<T> success(T object) {
+           R<T> r = new R<T>();
+           r.data = object;
+           r.code = 1;
+           return r;
+       }
+   
+       public static <T> R<T> error(String msg) {
+           R r = new R();
+           r.msg = msg;
+           r.code = 0;
+           return r;
+       }
+   
+       public R<T> add(String key, Object value) {
+           this.map.put(key, value);
+           return this;
+       }
+   
+   }
+   ```
+
+## 编写员工登录方法
+
+```java
+@PostMapping("/login")
+public R<Employee> login(HttpServletRequest request, @RequestBody Employee employee) {
+
+    //将页面提交的密码password进行md5加密
+    String password = employee.getPassword();
+    password = DigestUtils.md5DigestAsHex(password.getBytes());
+
+    //根据页面提交的用户名username查询数据库
+    LambdaQueryWrapper<Employee> queryWrapper = new LambdaQueryWrapper<>();
+    queryWrapper.eq(Employee::getUsername,employee.getUsername());
+    Employee emp = employeeService.getOne(queryWrapper);
+
+    //如果没有查询到则返回登陆失败结果
+    if (emp == null){
+        return R.error("登陆失败!");
+    }
+
+    //密码比对,如果不一致则返回登陆失败结果
+    if (!emp.getPassword().equals(password)) {
+        return R.error("登陆失败!");
+    }
+
+    //查看员工状态, 如果为已禁用状态,则返回员工已禁用结果
+    if (emp.getStatus() == 0){
+        return R.error("账号已禁用!");
+    }
+
+    //登录成功, 将员工id存入session并返回登陆成功结果
+    request.getSession().setAttribute("employee",emp.getId());
+
+    return R.success(emp);
+}
+```
+
+## 后台退出功能
+
+```java
+@PostMapping("/logout")
+public R<String> logout(HttpServletRequest request){
+    //清理Session中保存的当前登陆员工的id
+    request.getSession().removeAttribute("employee");
+
+    return R.success("退出成功!");
+}
+```
+
+## 完善登录功能
+
+> 禁止不登陆直接访问首页,使用过滤器或者拦截器
+
+1. 创建filter包,创建自定义过滤器
+
+   ```java
+   @WebFilter(filterName = "loginCheckFilter",urlPatterns = "/*")
+   @Slf4j
+   public class LoginCheckFilter implements Filter {
+       //路径匹配器,支持通配符
+       public static final AntPathMatcher PATH_MATCHER = new AntPathMatcher();
+   
+       @Override
+       public void doFilter(ServletRequest servletRequest, ServletResponse servletResponse, FilterChain chain) throws IOException, ServletException {
+           HttpServletRequest request = (HttpServletRequest) servletRequest;
+           HttpServletResponse response = (HttpServletResponse) servletResponse;
+           //获取本次请求的URI
+           String requestURI = request.getRequestURI();
+           log.info("拦截到请求:{}",requestURI);//断点调试查看
+           //定义不需要处理的请求路径,白名单
+           String[] urls = new String[]{
+                   "/employee/login",
+                   "/employee/logout",
+                   "/backend/**",
+                   "/front/**",
+                   "/common/**"
+           };
+           //判断本次请求是否需要处理
+           boolean check = check(urls, requestURI);
+           //如果不需要处理，则直接放行
+           if (check){
+               chain.doFilter(request,response);
+               return;
+           }
+           //判断登录状态，如果已登录，则直接放行
+           if (request.getSession().getAttribute("employee") != null) {
+               Long empId = (Long) request.getSession().getAttribute("employee");
+               BaseContext.setCurrent(empId);
+               chain.doFilter(request,response);
+               return;
+           }
+           //如果未登录则返回未登录结果
+           response.getWriter().write(JSON.toJSONString(R.error("NOTLOGIN")));
+           return;
+       }
+   
+       /**
+        * 路径匹配
+        * @param urls
+        * @param requestURI
+        * @return
+        */
+       public boolean check(String[] urls,String requestURI){
+           for (String url : urls) {
+               boolean match = PATH_MATCHER.match(url, requestURI);
+               if (match){
+                   return true;
+               }
+           }
+           return false;
+       }
+   }
+   ```
+
+2. 在启动类上加入注解@ServletComponentScan
+
+   ```java
+   @Slf4j
+   @SpringBootApplication
+   @ServletComponentScan
+   @EnableTransactionManagement
+   public class ReggieApplication {
+       public static void main(String[] args) {
+           SpringApplication.run(ReggieApplication.class,args);
+           log.info("项目启动成功!");
+       }
+   }
+   ```
+
+   ****
+
+   
+
 # 员工管理
 
+## 新增员工
 
+```java
+@PostMapping
+public R<String> save(HttpServletRequest request,@RequestBody Employee employee){
+    log.info("新增员工,员工信息:{}",employee.toString());//断点测试
+
+    //设置初始密码,需要加密
+    employee.setPassword(DigestUtils.md5DigestAsHex("123456".getBytes()));
+    employee.setCreateTime(LocalDateTime.now());
+    employee.setUpdateTime(LocalDateTime.now());
+
+    //获得当前登陆用户的id
+    Long empId = (Long) request.getSession().getAttribute("employee");
+
+    employee.setCreateUser(empId);
+    employee.setUpdateUser(empId);
+
+    employeeService.save(employee);
+
+    return R.success("新增员工成功!");
+}
+```
+
+因为username是unique(唯一,不可重复). 所以需要使用以下的**全局异常处理**
+
+## 全局异常处理
+
+> 在common下创建
+
+```java
+@ControllerAdvice(annotations = {RestController.class, Controller.class})
+@ResponseBody
+@Slf4j
+public class GlobalExceptionHandler {
+
+    /**
+     * 异常处理方法
+     * @return
+     */
+    @ExceptionHandler(SQLIntegrityConstraintViolationException.class)
+    public R<String> exceptionHandler(SQLIntegrityConstraintViolationException ex){
+        log.error(ex.getMessage());
+        if(ex.getMessage().contains("Duplicate entry")){ //异常日志包含的关键字
+            String[] split = ex.getMessage().split(" "); //正则分隔成字符串数组
+            String msg = split[2]+"已存在!";
+            return R.error(msg);
+        }
+        return R.error("未知错误!");
+    }
+}
+```
+
+## 分页查询
+
+> 配置MP的`分页插件`, 在config包下.
+
+```java
+@Configuration
+public class MybatisPlusConfig {
+    /**
+     * 分页插件
+     * @return
+     */
+    @Bean
+    public MybatisPlusInterceptor mybatisPlusInterceptor(){
+        MybatisPlusInterceptor interceptor = new MybatisPlusInterceptor();
+        interceptor.addInnerInterceptor(new PaginationInnerInterceptor());
+        return interceptor;
+    }
+}
+```
+
+**分页方法**
+
+```java
+/**
+ * 员工信息分页查询
+ * @param page
+ * @param pageSize
+ * @param name
+ * @return
+ */
+@GetMapping("/page")
+public R<Page> page(int page, int pageSize, String name) {
+    log.info("page = {},pageSize = {}, name = {}",page,pageSize,name);
+
+    //构造分页构造器
+    Page pageInfo = new Page(page, pageSize);
+
+    //构造条件构造器
+    LambdaQueryWrapper<Employee> queryWrapper = new LambdaQueryWrapper();
+    //添加过滤条件
+    queryWrapper.like(StringUtils.isNotEmpty(name),Employee::getName,name);
+    //添加排序条件
+    queryWrapper.orderByDesc(Employee::getUpdateTime);
+    //执行查询
+    employeeService.page(pageInfo,queryWrapper);
+    
+    return R.success(pageInfo);
+}
+```
+
+**分页查询实现步骤:**
+
+1. **返回值是泛型为`Page`的结果类, 参数为`page`, `pageSize`, 查询的`name`.**
+2. **构造分页构造器**
+3. **构造条件构造器**
+4. **添加过滤条件**
+5. **添加排序条件**
+6. **执行查询并返回Page.**
+
+## 启用/禁用员工账号
+
+```java
+@PutMapping
+public R<String> update(HttpServletRequest request,@RequestBody Employee employee){
+    log.info(employee.toString());
+    Long empId = (Long) request.getSession().getAttribute("employee");
+    employee.setUpdateTime(LocalDateTime.now());
+    employee.setUpdateUser(empId);
+    employeeService.updateById(employee);
+    return R.success("员工信息修改成功!");
+}
+```
+
+## Long型数字丢失精度问题的处理
+
+解决方法: `扩展消息转换器`和`对象转换器(JacksonObjectMapper)`
+
+实现原理: 
+
+1. 提供对象转换器JacksonObjectMapper, 基于Jackson进行Java对象到json数据的转换.
+2. 在WebMvcConfig配置类中扩展Springmvc的消息转换器, 在此消息转换器中使用提供的对象转换器进行java对象到json数据的转换.
+
+> 定义在common中的JacksonObjectMapper
+
+```java
+package com.reggie.common;
+
+/**
+ * 对象映射器:基于jackson将Java对象转为json，或者将json转为Java对象
+ * 将JSON解析为Java对象的过程称为 [从JSON反序列化Java对象]
+ * 从Java对象生成JSON的过程称为 [序列化Java对象到JSON]
+ */
+public class JacksonObjectMapper extends ObjectMapper {
+
+    public static final String DEFAULT_DATE_FORMAT = "yyyy-MM-dd";
+    public static final String DEFAULT_DATE_TIME_FORMAT = "yyyy-MM-dd HH:mm:ss";
+    public static final String DEFAULT_TIME_FORMAT = "HH:mm:ss";
+
+    public JacksonObjectMapper() {
+        super();
+        //收到未知属性时不报异常
+        this.configure(FAIL_ON_UNKNOWN_PROPERTIES, false);
+
+        //反序列化时，属性不存在的兼容处理
+        this.getDeserializationConfig().withoutFeatures(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
+
+
+        SimpleModule simpleModule = new SimpleModule()
+                .addDeserializer(LocalDateTime.class, new LocalDateTimeDeserializer(DateTimeFormatter.ofPattern(DEFAULT_DATE_TIME_FORMAT)))
+                .addDeserializer(LocalDate.class, new LocalDateDeserializer(DateTimeFormatter.ofPattern(DEFAULT_DATE_FORMAT)))
+                .addDeserializer(LocalTime.class, new LocalTimeDeserializer(DateTimeFormatter.ofPattern(DEFAULT_TIME_FORMAT)))
+
+                .addSerializer(BigInteger.class, ToStringSerializer.instance)
+                .addSerializer(Long.class, ToStringSerializer.instance)
+                .addSerializer(LocalDateTime.class, new LocalDateTimeSerializer(DateTimeFormatter.ofPattern(DEFAULT_DATE_TIME_FORMAT)))
+                .addSerializer(LocalDate.class, new LocalDateSerializer(DateTimeFormatter.ofPattern(DEFAULT_DATE_FORMAT)))
+                .addSerializer(LocalTime.class, new LocalTimeSerializer(DateTimeFormatter.ofPattern(DEFAULT_TIME_FORMAT)));
+
+        //注册功能模块 例如，可以添加自定义序列化器和反序列化器
+        this.registerModule(simpleModule);
+    }
+}
+```
+
+和静态资源映射在一起的扩展消息转换器
+
+```java
+package com.reggie.config;
+
+@Slf4j
+@Configuration
+public class WebMvcConfig extends WebMvcConfigurationSupport {
+    /**
+     * 静态资源映射
+     * @param registry
+     */
+    @Override
+    protected void addResourceHandlers(ResourceHandlerRegistry registry) {
+        log.info("开始进行静态资源映射");
+        registry.addResourceHandler("/backend/**").
+                addResourceLocations("classpath:/backend/");
+        registry.addResourceHandler("/front/**").
+                addResourceLocations("classpath:/front/");
+    }
+
+    /**
+     * 扩展mvc框架的消息转换器
+     * @param converters
+     */
+    @Override
+    protected void extendMessageConverters(List<HttpMessageConverter<?>> converters) {
+        log.info("扩展消息转换器...");
+        MappingJackson2HttpMessageConverter messageConverter = new MappingJackson2HttpMessageConverter();
+        messageConverter.setObjectMapper(new JacksonObjectMapper());
+        converters.add(0,messageConverter);
+    }
+}
+```
+
+## 员工信息修改
+
+> 员工信息修改和启禁用员工账号共用的一个方法. 这里需要做到的是根据员工id在修改页面回显员工信息.
+
+```java
+@GetMapping("/{id}")
+public R<Employee> getById(@PathVariable Long id){
+    log.info("根据id查询员工信息!");
+    Employee employee = employeeService.getById(id);
+    if (employee != null){
+        return R.success(employee);
+    }
+    return R.error("没有查询到对应员工信息!");
+}
+```
+
+## 公共字段自动填充
+
+> 创建时间, 更新时间, 创建用户, 更新用户, 这些都是公共字段
+
+是mybatis plus提供的功能.
+
+例如:
+
+注释部分即是可省略部分
+
+```java
+@PostMapping
+public R<String> save(HttpServletRequest request,@RequestBody Employee employee){
+    log.info("新增员工,员工信息:{}",employee.toString());
+    
+    //设置初始密码,需要加密
+    employee.setPassword(DigestUtils.md5DigestAsHex("123456".getBytes()));
+    //employee.setCreateTime(LocalDateTime.now());
+    //employee.setUpdateTime(LocalDateTime.now());
+
+    //获得当前登陆用户的id
+    //Long empId = (Long) request.getSession().getAttribute("employee");
+
+    //employee.setCreateUser(empId);
+    //employee.setUpdateUser(empId);
+
+    employeeService.save(employee);
+
+    return R.success("新增员工成功!");
+}
+```
+
+**实现步骤:**
+
+1. 在实体类的属性上加入@TableField注解, 指定自动填充的策略
+
+   ```java
+   @TableField(fill = FieldFill.INSERT)
+   private LocalDateTime createTime;
+   
+   @TableField(fill = FieldFill.INSERT_UPDATE)
+   private LocalDateTime updateTime;
+   
+   @TableField(fill = FieldFill.INSERT)
+   private Long createUser;
+   
+   @TableField(fill = FieldFill.INSERT_UPDATE)
+   private Long updateUser;
+   ```
+
+2. 按照框架要求编写元数据对象处理器, 在此类中统一为公共字段赋值, 此类需要实现MetaObjectHandler接口
+
+   > 定义在common包下的MyMetaObjectHandler
+
+   ```java
+   //使用的ThreadLocal@Component
+   @Slf4j
+   public class MyMetaObjectHandler implements MetaObjectHandler {
+       @Override
+       public void insertFill(MetaObject metaObject) {
+           log.info("公共字段自动填充[insert]...");
+           log.info(metaObject.toString());
+           metaObject.setValue("createTime", LocalDateTime.now());
+           metaObject.setValue("updateTime",LocalDateTime.now());
+           metaObject.setValue("createUser",BaseContext.getCurrent()); //使用的ThreadLocal
+           metaObject.setValue("updateUser",BaseContext.getCurrent()); //使用的ThreadLocal
+       }
+   
+       @Override
+       public void updateFill(MetaObject metaObject) {
+           log.info("公共字段自动填充[update]...");
+           log.info(metaObject.toString());
+   
+           //long id = Thread.currentThread().getId();
+           //log.info("线程id为:{}",id);
+   
+           metaObject.setValue("updateTime",LocalDateTime.now()); //使用的ThreadLocal
+           metaObject.setValue("updateUser",BaseContext.getCurrent()); //使用的ThreadLocal
+       }
+   }
+   ```
+
+3. 基于ThreadLocal封装工具类, 用户保存和获取当前登陆用户id, 上面代码片段标注的部分
+
+   > 一次请求对应的线程id是相同的, 就可以在线程中获取id的值到`自动填充方法`中了.
+
+   ```java
+   /**
+    * 基于ThreadLocal封装工具类, 用户保存和获取当前登陆用户id
+    */
+   public class BaseContext {
+       private static ThreadLocal<Long> threadLocal = new ThreadLocal<>();
+   
+       public static void setCurrent(Long id){
+           threadLocal.set(id);
+       }
+   
+       public static Long getCurrent(){
+           return threadLocal.get();
+       }
+   }
+   ```
+
+****
 
 # 分类管理
 
+## 新增分类
 
+先导入和定义实体类`Category`, `mapper`, `service`和`impl`, 还有`controller`. 与员工管理类似.
+
+实现了`Serialzable`
+
+```java
+@Data
+public class Category implements Serializable {
+
+    private static final long serialVersionUID = 1L;
+
+    private Long id;
+
+
+    //类型 1 菜品分类 2 套餐分类
+    private Integer type;
+
+
+    //分类名称
+    private String name;
+
+
+    //顺序
+    private Integer sort;
+
+
+    //创建时间
+    @TableField(fill = FieldFill.INSERT)
+    private LocalDateTime createTime;
+
+
+    //更新时间
+    @TableField(fill = FieldFill.INSERT_UPDATE)
+    private LocalDateTime updateTime;
+
+
+    //创建人
+    @TableField(fill = FieldFill.INSERT)
+    private Long createUser;
+
+
+    //修改人
+    @TableField(fill = FieldFill.INSERT_UPDATE)
+    private Long updateUser;
+    
+    //是否删除
+    //private Integer isDeleted;
+
+}
+```
+
+**新增分类**
+
+```java
+@RestController
+@RequestMapping("/category")
+@Slf4j
+public class CategoryController {
+
+    @Autowired
+    private CategoryService categoryService;
+
+    @PostMapping
+    public R<String> save(@RequestBody Category category){
+        log.info("category:{}",category);
+        categoryService.save(category);
+        return R.success("新增分类成功!");
+    }
+}
+```
+
+## 分类信息分类查询
+
+```java
+@GetMapping("/page")
+public R<Page> page(int page, int pageSize) {
+    log.info("page={},pageSize={}",page,pageSize);
+    Page pageInfo = new Page(page, pageSize);
+    //构造条件构造器
+    LambdaQueryWrapper<Category> queryWrapper = new LambdaQueryWrapper();
+    //添加过滤条件
+    //queryWrapper.like(StringUtils.isNotEmpty(name),Category::getName,name);
+    //添加排序条件
+    queryWrapper.orderByAsc(Category::getSort);
+    //执行查询
+    categoryService.page(pageInfo,queryWrapper);
+    return R.success(pageInfo);
+}
+```
+
+## 删除分类
+
+> 因为关联了多个表, 关联的不能删除, 所以需要自定义service
+
+**先导入和定义需要使用的其它表的基础类和接口.**
+
+1. **实体类Dish和Setmeal**.
+2. **两个实体类所对应的mapper, service, impl**.
+
+
+
+**自定义Service和ServiceImpl**
+
+```java
+package com.reggie.service;
+
+public interface CategoryService extends IService<Category> {
+    public void remove(Long ids);
+}
+```
+
+```java
+package com.reggie.service.impl;
+
+@Service
+public class CategoryServiceImpl extends ServiceImpl<CategoryMapper, Category> implements CategoryService {
+
+    @Autowired
+    private DishService dishService;
+
+    @Autowired
+    private SetMealService setMealService;
+
+    @Override
+    public void remove(Long ids) {
+        LambdaQueryWrapper<Dish> dishLambdaQueryWrapper = new LambdaQueryWrapper<>();
+        dishLambdaQueryWrapper.eq(Dish::getCategoryId,ids);
+        int count = dishService.count(dishLambdaQueryWrapper);
+
+        //查询当前分类是否关联了菜品
+        if (count>0) {
+            //已经关联菜品,抛出一个业务异常
+            throw new CustomException("当前分类下关联了菜品, 不能删除!");
+        }
+
+        //查询当前分类是否关联了套餐
+        LambdaQueryWrapper<Setmeal> setmealLambdaQueryWrapper = new LambdaQueryWrapper<>();
+        setmealLambdaQueryWrapper.eq(Setmeal::getCategoryId,ids);
+        int count1 = setMealService.count(setmealLambdaQueryWrapper);
+        if (count1>0) {
+            //已经关联套餐,抛出一个业务异常
+            throw new CustomException("当前分类下关联了套餐, 不能删除!");
+        }
+
+        //正常删除分类
+        super.removeById(ids);
+    }
+}
+```
+
+**定义自定义业务异常和异常类处理**
+
+```java
+package com.reggie.common;
+
+public class CustomException extends RuntimeException{
+    public CustomException(String message) {
+        super(message);
+    }
+}
+```
+
+```java
+/**
+ * 自定义业务异常处理方法
+ * @return
+ */
+@ExceptionHandler(CustomException.class)
+public R<String> exceptionHandler(CustomException ex){
+    log.error(ex.getMessage());
+    return R.error(ex.getMessage());
+}
+```
+
+**删除分类**
+
+```java
+@DeleteMapping
+public R<String> delete(Long ids){
+    log.info("删除分类,id为:{}",ids);
+    categoryService.remove(ids);
+
+    return R.success("删除成功!");
+}
+```
+
+## 修改分类
+
+```java
+@PutMapping
+public R<String> update(@RequestBody Category category){
+    log.info("修改分类信息:{}",category);
+    categoryService.updateById(category);
+    return R.success("修改分类信息成功!");
+}
+```
+
+****
 
 # 菜品管理
 
+## 文件上传下载
 
+文件上传，也称为upload. 是指将本地图片、视频、音频等文件上传到服务器上，可以供其他用户浏览或下载的过程。
+
+文件上传在项目中应用非常广泛，我们经常发微博、发微信朋友圈都用到了文件上传功能。
+
+文件上传时，对页面的form表单有如下要求:
+
+* method="post" 采用post方式提交数据
+* enctype="multipart/form-data" 采用multipart格式上传文件
+* type="file"使用input的file控件上传
+
+举例:
+
+```html
+<form method="post" action="/common/upload" enctype="multipart/form-data">
+<input name="myFile" type="file" />
+<input type="submit" value="提交" />
+</form>
+```
+
+服务端要接收客户端页面上传的文件，通常都会使用Apache的两个组件：
+
+* commons-fileupload
+
+* commons-io
+
+Sprina框架在sprina-web包中对文件上传进行了封装，大大简化了服务端代码，我们只需要在Controller的方法中声明
+一个MultipartFile类型的参数即可接收上传的文件，例如：
+
+```java
+package com.reggie.controller;
+
+/**
+ * 文件的上传和下载
+ */
+@RestController
+@RequestMapping("/common")
+@Slf4j
+public class CommonController {
+
+    @Value("${reggie.path}")
+    private String basePath;
+
+    @PostMapping("/upload")
+    public R<String> upload(MultipartFile file){//参数名必须与表单中的name的值相同
+        log.info(file.toString());//断点测试
+
+        //原始文件名
+        String originalFilename = file.getOriginalFilename();
+        String suffix = originalFilename.substring(originalFilename.lastIndexOf("."));
+
+        //使用UUID重新生成文件名
+        String fileName = UUID.randomUUID().toString()+suffix;
+
+        //创建一个目录对象
+        File dir = new File(basePath);
+        //判断当前目录是否存在
+        if (!dir.exists()) {
+            //目录不存在, 需要创建
+            dir.mkdir();
+        }
+        try {
+            //将临时文件转存到指定位置
+            file.transferTo(new File(basePath+fileName));
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        return R.success(fileName);
+    }
+
+    @GetMapping("/download")
+    public void download(String name, HttpServletResponse response){
+        try {
+            //输入流,读取文件内容
+            FileInputStream fileInputStream = new FileInputStream(new File(basePath+name));
+
+            //输出流,将文件写回浏览器
+            ServletOutputStream outputStream = response.getOutputStream();
+            response.setContentType("image/jpeg");
+
+            int len = 0;
+            byte[] bytes = new byte[1024];
+            while ((len = fileInputStream.read(bytes)) != -1){
+                outputStream.write(bytes,0,len);
+                outputStream.flush();
+            }
+
+            //关闭资源
+            outputStream.close();
+            fileInputStream.close();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+}
+```
+
+**拦截器中加入upload路径的白名单**
+
+**application.yaml中定义保存的路径**,使用@Value接收basePath
+
+## 新增菜品
+
+> 涉及到两张表, dish(菜品表)和dish_flavor(菜品口味表)
+
+导入DishFlavor实体类, 定义mapper, service和impl, 还有controller.
+
+新增菜品需要处理的请求:
+
+1. 菜品分类数据回显到下拉框.
+2. 图片上传
+3. 图片下载
+4. 菜品相关数据以json形式提交到服务器.
+
+**实现步骤:**
+
+CategoryController定义查询list形式的分类数据
+
+```java
+@GetMapping("/list")
+public R<List<Category>> list(Category category){
+
+    //条件构造器
+    LambdaQueryWrapper<Category> queryWrapper = new LambdaQueryWrapper<>();
+    //添加条件
+    queryWrapper.eq(category.getType() != null,Category::getType,category.getType());
+    //添加排序条件
+    queryWrapper.orderByAsc(Category::getSort).orderByDesc(Category::getUpdateTime);
+	//执行查询
+    List<Category> list = categoryService.list(queryWrapper);
+
+    return R.success(list);
+
+}
+```
+
+> 因为dish实体类满足不了所有的字段查询, 所以需要导入DTO, Data Transfer Object, 即数据传输对象, 一般用于展示层与服务层之间的数据传输.
+
+**创建dto包,导入DishDto**
+
+```java
+@Data
+public class DishDto extends Dish {
+
+    private List<DishFlavor> flavors = new ArrayList<>();
+
+    private String categoryName;
+
+    private Integer copies;
+}
+```
+
+> shService自定义新增菜品的业务方法`saveWithFlavor`, 并在serviceImpl中实现.
+
+```java
+package com.reggie.service;
+
+public interface DishService extends IService<Dish> {
+    //新增菜品, 需要操作两张表, dish,dish_flavor
+    public void saveWithFlavor(DishDto dishDto);
+}
+```
+
+```java
+package com.reggie.service.impl;
+
+@Service
+public class DishServiceImpl extends ServiceImpl<DishMapper, Dish> implements DishService{
+
+    @Autowired
+    private DishFlavorService dishFlavorService;
+
+    @Override
+    @Transactional 
+    public void saveWithFlavor(DishDto dishDto) {
+        //保存菜品的基本信息
+        this.save(dishDto);
+
+        Long dishId = dishDto.getId();
+
+        //菜品口味
+        List<DishFlavor> flavors = dishDto.getFlavors();
+        flavors = flavors.stream().map((item) -> {
+            item.setDishId(dishId);
+            return item;
+        }).collect(Collectors.toList());
+
+        //保存菜品口味数据到dish_flavor
+        dishFlavorService.saveBatch(flavors);
+    }
+}
+```
+
+因为操作了两张表所以需要开启事务, 注意启动类中添加`@EnableTransactionManagement`
+
+上文中的使用stream流的方式处理了DishFlavor的数据, 相当于遍历flavors设置DishId.
+
+```java
+List<DishFlavor> flavors = dishDto.getFlavors();
+        flavors = flavors.stream().map((item) -> {
+            item.setDishId(dishId);
+            return item;
+        }).collect(Collectors.toList());
+```
+
+因为DishFlavor的表数据是如下形式: 
+
+| id                  | dish_id             | name | value                                   |
+| ------------------- | ------------------- | ---- | --------------------------------------- |
+| 1569978250610876419 | 1569978250585710593 | 甜味 | ["无糖","少糖","半糖","多糖","全糖"]    |
+| 1569978250610876418 | 1569978250585710593 | 忌口 | ["不要葱","不要蒜","不要香菜","不要辣"] |
+| 1569978250610876417 | 1569978250585710593 | 辣度 | ["不辣","微辣","中辣","重辣"]           |
+
+**定义DishController, 注入需要的三个service.**
+
+```java
+package com.reggie.controller;
+
+@RestController
+@RequestMapping("/dish")
+@Slf4j
+public class DishController {
+    @Autowired
+    private DishService dishService;
+
+    @Autowired
+    private DishFlavorService dishFlavorService;
+
+    @Autowired
+    private CategoryService categoryService;
+    
+    /**
+     * 新增菜品
+     * @param dishDto
+     * @return
+     */
+    @PostMapping
+    public R<String> save(@RequestBody DishDto dishDto){
+        log.info(dishDto.toString());
+        dishService.saveWithFlavor(dishDto);
+
+        return R.success("添加成功!");
+    }
+}
+```
+
+## 菜品信息分页查询
+
+```java
+/**
+ * 菜品信息分页
+ * @param page
+ * @param pageSize
+ * @param name
+ * @return
+ */
+@GetMapping("/page")
+public R<Page> page(int page,int pageSize, String name) {
+    //构造分页构造器对象
+    Page<Dish> dishPage = new Page<>(page,pageSize);
+    Page<DishDto> dishDtoPage = new Page<>();
+    //条件构造器
+    LambdaQueryWrapper<Dish> queryWrapper = new LambdaQueryWrapper<>();
+    queryWrapper.like(name != null,Dish::getName,name);
+    queryWrapper.orderByDesc(Dish::getUpdateTime);
+    //执行分页查询
+    dishService.page(dishPage,queryWrapper);
+
+    //对象拷贝
+    BeanUtils.copyProperties(dishPage,dishDtoPage,"records");
+
+    List<Dish> records = dishPage.getRecords();
+    List<DishDto> list = records.stream().map((item) -> {
+        DishDto dishDto = new DishDto();
+        BeanUtils.copyProperties(item,dishDto);
+        Long categoryId = item.getCategoryId();//分类id
+        //根据id查询分类对象
+        Category category = categoryService.getById(categoryId);
+        if (category != null) {
+        String categoryName = category.getName();
+        dishDto.setCategoryName(categoryName);
+        }
+        return dishDto;
+    }).collect(Collectors.toList());
+
+    dishDtoPage.setRecords(list);
+
+    return R.success(dishDtoPage);
+}
+```
+
+**因为分页查询查询到的数据不完整, 需要将对象拷贝到Dto中, 再使用stream流对records进行处理.**
+
+## 修改菜品
+
+> 修改菜品和新增菜品类似, 也是关联的多张表, 所以需要自定义service. 
+>
+> 有两个自定义的service, 一个是`根据id查询菜品信息和对应的口味信息`, 用于回显, 一个是`更新菜品信息, 同时更新口味信息`.
+
+```java
+package com.reggie.service;
+
+public interface DishService extends IService<Dish> {
+    //新增菜品, 需要操作两张表, dish,dish_flavor
+    public void saveWithFlavor(DishDto dishDto);
+
+    //根据id查询菜品信息和对应的口味信息
+    public DishDto getByIdWithFlavor(Long id);
+
+    //更新菜品信息, 同时更新口味信息
+    public void updateWithFlavor(DishDto dishDto);
+}
+```
+
+```java
+    @Override
+    public DishDto getByIdWithFlavor(Long id) {
+        //查询菜品基本信息
+        Dish dish = this.getById(id);
+
+        DishDto dishDto = new DishDto();
+        BeanUtils.copyProperties(dish,dishDto);
+        //查询当前菜品对应的口味信息
+        LambdaQueryWrapper<DishFlavor> queryWrapper = new LambdaQueryWrapper<>();
+        queryWrapper.eq(DishFlavor::getDishId,dish.getId());
+        List<DishFlavor> flavors = dishFlavorService.list(queryWrapper);
+        dishDto.setFlavors(flavors);
+
+        return dishDto;
+    }
+
+    @Override
+    public void updateWithFlavor(DishDto dishDto) {
+        //更新dish表基本信息
+        this.updateById(dishDto);
+
+        //清理当前菜品对应口味数据
+        LambdaQueryWrapper<DishFlavor> queryWrapper = new LambdaQueryWrapper();
+        queryWrapper.eq(DishFlavor::getDishId,dishDto.getId());
+        dishFlavorService.remove(queryWrapper);
+
+        //添加当前提交过来的口味数据
+        List<DishFlavor> flavors = dishDto.getFlavors();
+
+        flavors = flavors.stream().map((item) -> {
+            item.setDishId(dishDto.getId());
+            return item;
+        }).collect(Collectors.toList());
+
+        dishFlavorService.saveBatch(flavors);
+    }
+
+```
+
+> 最后是调用修改菜品
+
+```java
+@PutMapping
+public R<String> update(@RequestBody DishDto dishDto){
+    dishService.updateWithFlavor(dishDto);
+    return R.success("修改成功!");
+}
+```
+
+****
 
 # 套餐管理
 
+## 新增套餐
 
+涉及两张表:
 
+* setmeal 套餐表(节选)
 
+  | id                  | category_id         | name          | price | status |
+  | ------------------- | ------------------- | ------------- | ----- | ------ |
+  | 1415580119015145474 | 1413386191767674881 | 儿童套餐A计划 | 4000  | 1      |
+  | 1569238716935868417 | 1413342269393674242 | 商务套餐001   | 3000  | 1      |
+  | 1569238796816388097 | 1413342269393674242 | 商务套餐002   | 4000  | 1      |
+
+* setmeal_dish 套餐菜品关系表(节选)
+
+  | id                  | setmeal_id          | dish_id             | name     | price    |
+  | ------------------- | ------------------- | ------------------- | -------- | -------- |
+  | 1415580119052894209 | 1415580119015145474 | 1397862198033297410 | 老火靓汤 | 49800.00 |
+  | 1415580119061282817 | 1415580119015145474 | 1413342036832100354 | 北冰洋   | 500.00   |
+  | 1415580119069671426 | 1415580119015145474 | 1413385247889891330 | 米饭     | 200.00   |
+
+> 新增页面的套餐信息插入到setmeal表, 还需要向setmeal_dish表插入套餐和菜品关联信息.
+
+**准备工作**
+
+* 导入SetmealDish实体类.
+* 导入SetmealDto.
+* 定义SetmealDish的mapper, service, impl和controller.
+
+**需要的请求**
+
+* 套餐分类数据展示到下拉框中.
+* 菜品分类数据展示到添加菜品窗口中.
+* 菜品数据展示到添加菜品窗口中.
+* 点击保存, 将套餐相关数据以json形式提交到服务器.
+
+> DishController中定义list形式的菜品数据, 用于展示到添加菜品窗口中. 
+
+```java
+@GetMapping("/list")
+public R<List<Dish>> list(Dish dish){
+    //构造条件查询
+    LambdaQueryWrapper<Dish> queryWrapper = new LambdaQueryWrapper<>();
+    queryWrapper.eq(dish.getCategoryId() != null, Dish::getCategoryId,dish.getCategoryId());
+    //添加排序条件
+    queryWrapper.
+            orderByAsc(Dish::getSort).
+            orderByDesc(Dish::getUpdateTime);
+    queryWrapper.eq(Dish::getStatus,1);
+    //执行查询
+    List<Dish> list = dishService.list(queryWrapper);
+
+    return R.success(list);
+}
+```
+
+> 还是自定义service, 在setmealService中.
+
+```java
+public interface SetMealService extends IService<Setmeal> {
+    //新增套餐, 同时保存套餐和菜品的关联关系
+    public void saveWithDish(SetmealDto setmealDto);
+}
+```
+
+```java
+@Service
+@Slf4j
+public class SetMealServiceImpl extends ServiceImpl<SetMealMapper, Setmeal> implements SetMealService {
+
+    @Autowired
+    private SetmealDishService setmealDishService;
+
+    @Transactional
+    @Override
+    public void saveWithDish(SetmealDto setmealDto) {
+        this.save(setmealDto);
+        List<SetmealDish> setmealDishes = setmealDto.getSetmealDishes();
+        setmealDishes.stream().map((item) ->{
+           item.setSetmealId(setmealDto.getId());
+           return item;
+        }).collect(Collectors.toList());
+        
+        setmealDishService.saveBatch(setmealDishes);
+    }
+}
+```
+
+> 然后controller中调用
+
+```java
+@RestController
+@RequestMapping("/setmeal")
+@Slf4j
+public class SetmealController {
+
+    @Autowired
+    private SetmealDishService setmealDishService;
+
+    @Autowired
+    private SetMealService setMealService;
+
+    @Autowired
+    private CategoryService categoryService;
+
+    /**
+     * 新增套餐
+     * @param setmealDto
+     * @return
+     */
+    @PostMapping
+    public R<String> save(@RequestBody SetmealDto setmealDto){
+        setMealService.saveWithDish(setmealDto);
+
+        return R.success("新增套餐成功!");
+    }
+}
+```
+
+## 套餐信息分页查询
+
+```java
+@GetMapping("/page")
+public R<Page> page(int page,int pageSize, String name){
+    //分页构造器对象
+    Page<Setmeal> pageInfo = new Page<>(page,pageSize);
+    Page<SetmealDto> dtoPage = new Page<>();
+
+    LambdaQueryWrapper<Setmeal> queryWrapper = new LambdaQueryWrapper<>();
+
+    //添加查询条件
+    queryWrapper.like(name != null, Setmeal::getName,name);
+
+    //添加排序条件
+    queryWrapper.orderByDesc(Setmeal::getUpdateTime);
+
+    setMealService.page(pageInfo,queryWrapper);
+
+    //对象拷贝
+    BeanUtils.copyProperties(pageInfo,dtoPage,"records");
+    List<Setmeal> records = pageInfo.getRecords();
+
+    List<SetmealDto> dtoList = records.stream().map((item) -> {
+        SetmealDto setmealDto = new SetmealDto();
+        //对象拷贝
+        BeanUtils.copyProperties(item,setmealDto);
+        //分类id
+        Long categoryId = item.getCategoryId();
+        //根据分类id查询分类对象
+        Category category = categoryService.getById(categoryId);
+        if (category != null) {
+            //分类名称
+            String categoryName = category.getName();
+            setmealDto.setCategoryName(categoryName);
+        }
+        return setmealDto;
+    }).collect(Collectors.toList());
+
+    dtoPage.setRecords(dtoList);
+    return R.success(dtoPage);
+}
+```
+
+## 删除套餐
+
+> 还是现在setmeal的service中自定义删除方法
+
+```java
+public interface SetMealService extends IService<Setmeal> {
+    //新增套餐, 同时保存套餐和菜品的关联关系
+    public void saveWithDish(SetmealDto setmealDto);
+
+    //删除套餐, 同时删除套餐和菜品的关联数据
+    public void removeWithDish(List<Long> ids);
+}
+```
+
+```java
+//删除套餐, 同时删除套餐和菜品的关联数据
+@Transactional
+@Override
+public void removeWithDish(List<Long> ids) {
+    //查询套餐状态, 确定是否可以删除
+    LambdaQueryWrapper<Setmeal> queryWrapper = new LambdaQueryWrapper();
+    
+    //添加过滤条件
+    queryWrapper.in(Setmeal::getId,ids);
+    queryWrapper.eq(Setmeal::getStatus,1);
+
+    int count = this.count(queryWrapper);
+
+    if (count > 0) {
+        //不能删除抛出一个业务异常
+        throw new CustomException("套餐正在售卖中, 不能删除!");
+    }
+    //可以删除,先删除setmeal
+    this.removeByIds(ids);
+
+    //然后删除setmealDish表中的数据
+    LambdaQueryWrapper<SetmealDish> lambdaQueryWrapper = new LambdaQueryWrapper<>();
+    lambdaQueryWrapper.in(SetmealDish::getDishId,ids);
+
+    //删除关系表setmeal_dish
+    setmealDishService.remove(lambdaQueryWrapper);
+}
+```
+
+> 在setmealController中调用
+
+```java
+@DeleteMapping
+public R<String> delete(@RequestParam List<Long> ids){
+    setMealService.removeWithDish(ids);
+    return R.success("套餐数据删除成功!");
+}
+```
 

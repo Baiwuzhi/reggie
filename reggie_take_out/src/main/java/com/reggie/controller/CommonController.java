@@ -31,7 +31,7 @@ public class CommonController {
 
     @PostMapping("/upload")
     public R<String> upload(MultipartFile file){//参数名必须与表单中的name的值相同
-        log.info(file.toString());
+        log.info(file.toString());//断点测试
 
         //原始文件名
         String originalFilename = file.getOriginalFilename();

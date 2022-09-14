@@ -34,9 +34,7 @@ public class SetMealServiceImpl extends ServiceImpl<SetMealMapper, Setmeal> impl
            return item;
         }).collect(Collectors.toList());
 
-
         setmealDishService.saveBatch(setmealDishes);
-
     }
 
     //删除套餐, 同时删除套餐和菜品的关联数据

@@ -45,18 +45,15 @@ public class EmployeeController {
             return R.error("登陆失败!");
         }
 
-
         //密码比对,如果不一致则返回登陆失败结果
         if (!emp.getPassword().equals(password)) {
             return R.error("登陆失败!");
         }
 
-
         //查看员工状态, 如果为已禁用状态,则返回员工已禁用结果
         if (emp.getStatus() == 0){
             return R.error("账号已禁用!");
         }
-
 
         //登录成功, 将员工id存入session并返回登陆成功结果
         request.getSession().setAttribute("employee",emp.getId());
@@ -86,7 +83,6 @@ public class EmployeeController {
     @PostMapping
     public R<String> save(HttpServletRequest request,@RequestBody Employee employee){
         log.info("新增员工,员工信息:{}",employee.toString());
-
 
         //设置初始密码,需要加密
         employee.setPassword(DigestUtils.md5DigestAsHex("123456".getBytes()));
@@ -135,7 +131,6 @@ public class EmployeeController {
     @PutMapping
     public R<String> update(HttpServletRequest request,@RequestBody Employee employee){
         log.info(employee.toString());
-
         //Long empId = (Long) request.getSession().getAttribute("employee");
         //employee.setUpdateTime(LocalDateTime.now());
         //employee.setUpdateUser(empId);

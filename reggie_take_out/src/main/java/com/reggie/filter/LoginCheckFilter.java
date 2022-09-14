@@ -25,7 +25,8 @@ public class LoginCheckFilter implements Filter {
         HttpServletResponse response = (HttpServletResponse) servletResponse;
         //获取本次请求的URI
         String requestURI = request.getRequestURI();
-        //定义不需要处理的请求路径
+        log.info("拦截到请求:{}",requestURI);//断点调试查看
+        //定义不需要处理的请求路径,白名单
         String[] urls = new String[]{
                 "/employee/login",
                 "/employee/logout",

@@ -5,4 +5,4 @@ import com.reggie.entity.Employee;
 
 public interface EmployeeService extends IService<Employee> {
 
-    }
+}

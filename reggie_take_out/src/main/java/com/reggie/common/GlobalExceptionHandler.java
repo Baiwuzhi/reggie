@@ -31,7 +31,7 @@ public class GlobalExceptionHandler {
     }
 
     /**
-     * 异常处理方法
+     * 自定义业务异常处理方法
      * @return
      */
     @ExceptionHandler(CustomException.class)

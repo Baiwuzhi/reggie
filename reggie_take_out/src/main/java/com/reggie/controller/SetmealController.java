@@ -105,11 +105,4 @@ public class SetmealController {
         setMealService.removeWithDish(ids);
         return R.success("套餐数据删除成功!");
     }
-
-    @PostMapping("/status")
-    public R<String> updateStatus(@RequestParam List<Long> ids){
-        log.info("ids:{}",ids);
-
-        return null;
-    }
 }
